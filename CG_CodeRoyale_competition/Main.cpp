@@ -403,7 +403,9 @@ int main()
 		myQueen.position = myQueen.position + TileContainsEnemyUnits(myQueen.position, enemyUnits); // +TileContainsObstacle(myQueen.position, enemySites);
 
 
-
+		/*
+		test comment change for github
+		*/
 
 		if (GetDistance(myQueen.position, enemyQueen.position) < 200)
 		{
