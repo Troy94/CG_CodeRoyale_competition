@@ -8,6 +8,11 @@
 
 using namespace std;
 
+
+const int TOWER_COVERAGE_PER_HP = 1000;
+
+const double PI = 3.14159265358979323846264338327950288419716939937510582097494459230781640628620899862;
+
 const int MAP_WIDTH_PIXELS = 1920;
 const int MAP_HEIGHT_PIXELS = 1000;
 const int MAP_WIDTH_TILES = 48;
@@ -48,14 +53,7 @@ struct Vector2d
 
 	inline bool operator==(const Vector2d& v2)
 	{
-		if (x == v2.x and x == v2.y)
-		{
-			return true;
-		}
-		else
-		{
-			return false;
-		}
+		return (x == v2.x and y == v2.y);
 	}
 
 	inline Vector2d operator+(const Vector2d& v2)
@@ -74,9 +72,40 @@ struct Vector2d
 		return result;
 	}
 
+	inline bool operator<(const Vector2d& v2)
+	{
+		return ((x < v2.x) and (y < v2.y));
+	}
+
+	inline bool operator>(const Vector2d& v2)
+	{
+		return ((x > v2.x) and (y > v2.y));
+	}
+
 	int x;
 	int y;
 };
+
+/* TOWER RADIUS CALC
+Range = (int)Math.Sqrt ((HP * TOWER_COVERAGE_PER_HP + area) / Math.PI);
+with const int TOWER_COVERAGE_PER_HP = 1000;
+*/
+
+struct Circle
+{
+	Vector2d position;
+	int radius;
+};
+
+int AreaOfCircle(int radius)
+{
+	return PI * pow(radius, 2);
+}
+
+int GetTowerAttackRange(int HP, int area)
+{
+	return sqrt((HP * TOWER_COVERAGE_PER_HP + area) / PI);
+}
 
 int GetTilemapIndex(int pX, int pY)
 {
@@ -91,6 +120,11 @@ int GetManhattanDistance(Vector2d v1, Vector2d v2)
 int GetDistance(Vector2d v1, Vector2d v2)
 {
 	return sqrt(pow(v2.x - v1.x, 2) + pow(v2.y - v1.y, 2));
+}
+
+bool Colliding(Circle& object1, Circle& object2)
+{
+	return (GetDistance(object1.position, object2.position) <= (object1.radius + object2.radius));
 }
 
 Vector2d TileToScreen(Vector2d tileCoords)
@@ -239,15 +273,57 @@ Site GetNearestSite(Vector2d currPos, map<int, Site>& sites, int owner)
 	return nearestSite.begin()->second;
 }
 
-Site GetNearestFreeSite(Vector2d currPos, map<int, Site> freeSites, vector<Site> enemySites)
+// returns map sorted by distance from player
+map<int, Site> GetNearestEnemyTowers(map<int, Site>& sites, Vector2d pos)
 {
-	map<int, Site> furthestFromEnemySite;
-	map<int, Site> nearestFreeSite;
-	for (map<int, Site>::iterator i = freeSites.begin(); i != freeSites.end(); ++i)
+	map<int, Site> nearestTowers;
+	for (auto site : sites)
 	{
-		//furthestFromEnemySite[GetDistance(freeSites)]
+		if(site.second.owner == ENEMY and site.second.structureType == TOWER)
+			nearestTowers[GetDistance(pos, site.second.position)] = site.second;
+	}
+	return nearestTowers;
+}
+
+Site GetNearestFreeSafeSite(map<int, Site>& sites, Vector2d pos)
+{
+	Circle siteCircle, towerCircle;
+	map<int, Site> enemyTowers = GetNearestEnemyTowers(sites, pos);
+	map<int, Site> nearestSites;
+	Site safeSite;
+
+	if (not enemyTowers.empty())
+	{
+		for (auto site : sites)
+		{
+			siteCircle.position = site.second.position;
+			siteCircle.radius = site.second.radius;
+
+			for (auto tower : enemyTowers)
+			{
+				towerCircle.position = tower.second.position;
+				towerCircle.radius = tower.second.radius + GetTowerAttackRange(tower.second.param1, AreaOfCircle(tower.second.radius));
+				if (site.second.owner == FREE)
+				{
+					if (not Colliding(siteCircle, towerCircle))
+					{
+						safeSite = site.second;
+					}
+				}
+			}
+		}
+		return safeSite;
+	}
+	else
+	{
+		for (auto site : sites)
+			nearestSites[GetDistance(pos, site.second.position)] = site.second;
+
+		return safeSite;
 	}
 }
+
+
 
 int main()
 {
@@ -410,14 +486,14 @@ int main()
 		if (GetDistance(myQueen.position, enemyQueen.position) < 200)
 		{
 			Vector2d newPosition = { myQueen.position.x / 2, myQueen.position.y / 2 };
-			Site moveToSite = GetNearestSite(newPosition, theSites, FREE);
+			Site moveToSite = GetNearestFreeSafeSite(theSites, newPosition); //GetNearestSite(newPosition, theSites, FREE);
 			cout << "MOVE " << moveToSite.position.x << " " << moveToSite.position.y << endl;
 		}
 		else if (numBarracks < 1)
 		{
 			if (touchedSite == FREE) // not at a site? Go there!
 			{
-				Site moveToSite = GetNearestSite(myQueen.position, theSites, FREE);
+				Site moveToSite = GetNearestFreeSafeSite(theSites, myQueen.position);
 				cout << "MOVE " << moveToSite.position.x << " " << moveToSite.position.y << endl;
 			}
 			else
@@ -429,7 +505,7 @@ int main()
 				}
 				else
 				{
-					Site moveToSite = GetNearestSite(myQueen.position, theSites, FREE);
+					Site moveToSite = GetNearestFreeSafeSite(theSites, myQueen.position);
 					cout << "MOVE " << moveToSite.position.x << " " << moveToSite.position.y << endl;
 				}
 			}
@@ -440,7 +516,7 @@ int main()
 			{
 				if (touchedSite == FREE) // not at a site? Go there!
 				{
-					Site moveToSite = GetNearestSite(myQueen.position, theSites, FREE);
+					Site moveToSite = GetNearestFreeSafeSite(theSites, myQueen.position);
 					cout << "MOVE " << moveToSite.position.x << " " << moveToSite.position.y << endl;
 				}
 				else
@@ -452,7 +528,7 @@ int main()
 					}
 					else
 					{
-						Site moveToSite = GetNearestSite(myQueen.position, theSites, FREE);
+						Site moveToSite = GetNearestFreeSafeSite(theSites, myQueen.position);
 						cout << "MOVE " << moveToSite.position.x << " " << moveToSite.position.y << endl;
 					}
 				}
@@ -461,7 +537,7 @@ int main()
 			{
 				if (touchedSite == FREE)
 				{
-					Site moveToSite = GetNearestSite(myQueen.position, theSites, FREE);
+					Site moveToSite = GetNearestFreeSafeSite(theSites, myQueen.position);
 					cout << "MOVE " << moveToSite.position.x << " " << moveToSite.position.y << endl;
 				}
 				else
@@ -476,7 +552,7 @@ int main()
 							}
 							else
 							{
-								Site moveToSite = GetNearestSite(myQueen.position, theSites, FREE);
+								Site moveToSite = GetNearestFreeSafeSite(theSites, myQueen.position);
 								cout << "MOVE " << moveToSite.position.x << " " << moveToSite.position.y << endl;
 							}
 						}
@@ -498,7 +574,7 @@ int main()
 						}
 						else
 						{
-							Site moveToSite = GetNearestSite(myQueen.position, theSites, FREE);
+							Site moveToSite = GetNearestFreeSafeSite(theSites, myQueen.position);
 							cout << "MOVE " << moveToSite.position.x << " " << moveToSite.position.y << endl;
 						}
 					}
@@ -529,7 +605,6 @@ int main()
 		// COMMENCE TRAINING
 		cout << "TRAIN";
 		vector<int> trainingSites{};
-
 		for (int i = 0; i < numSites; ++i)
 		{
 			if (theSites[i].owner == ME and theSites[i].structureType == BARRACKS)
@@ -537,8 +612,6 @@ int main()
 				trainingSites.push_back(theSites[i].siteId);
 			}
 		}
-
-
 		for (auto s : trainingSites)
 			cout << " " << s;
 
